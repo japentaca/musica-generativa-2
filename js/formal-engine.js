@@ -1,4 +1,4 @@
-import { Section } from './section.js?v=2';
+import { Section } from './section.js?v=3';
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -172,9 +172,9 @@ export class FormalEngine {
   }
 
   createSection(type, prng) {
-    const defaults = Section.defaultsForType(type);
+    const allowedDurations = Section.getAllowedDurationBars(type);
     return new Section(type, {
-      durationBars: prng.randomInt(defaults.minBars, defaults.maxBars)
+      durationBars: prng.pick(allowedDurations)
     });
   }
 

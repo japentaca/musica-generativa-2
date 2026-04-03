@@ -1,4 +1,4 @@
-import { HarmonicState } from './harmonic-state.js?v=2';
+import { HarmonicState } from './harmonic-state.js?v=3';
 
 export class Scheduler {
   constructor() {

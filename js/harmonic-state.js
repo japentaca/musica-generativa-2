@@ -21,15 +21,31 @@ export class HarmonicState {
     return MODES[this.mode].map(interval => mod(this.tonic + interval, 12));
   }
 
-  quantizeMidi(midiNote) {
-    const scalePitchClasses = this.getScalePitchClasses();
-    const baseOctave = Math.floor(midiNote / 12);
+  degreeToPitchClass(degree) {
+    const intervals = MODES[this.mode];
+    return mod(this.tonic + intervals[mod(degree, intervals.length)], 12);
+  }
 
+  getTriadDegrees(degree) {
+    return [degree, degree + 2, degree + 4];
+  }
+
+  getChordPitchClasses(degree) {
+    return this.getTriadDegrees(degree).map(scaleDegree => this.degreeToPitchClass(scaleDegree));
+  }
+
+  quantizeMidiToPitchClasses(midiNote, pitchClasses) {
+    const normalizedPitchClasses = Array.from(new Set(pitchClasses.map(pitchClass => mod(pitchClass, 12))));
+    if (normalizedPitchClasses.length === 0) {
+      return midiNote;
+    }
+
+    const baseOctave = Math.floor(midiNote / 12);
     let bestNote = midiNote;
     let bestDistance = Number.POSITIVE_INFINITY;
 
     for (let octave = baseOctave - 1; octave <= baseOctave + 1; octave++) {
-      for (const pitchClass of scalePitchClasses) {
+      for (const pitchClass of normalizedPitchClasses) {
         const candidate = octave * 12 + pitchClass;
         const distance = Math.abs(candidate - midiNote);
         if (distance < bestDistance || (distance === bestDistance && candidate < bestNote)) {
@@ -42,6 +58,14 @@ export class HarmonicState {
     return bestNote;
   }
 
+  quantizeMidi(midiNote) {
+    return this.quantizeMidiToPitchClasses(midiNote, this.getScalePitchClasses());
+  }
+
+  quantizeMidiToChord(midiNote, chordDegree) {
+    return this.quantizeMidiToPitchClasses(midiNote, this.getChordPitchClasses(chordDegree));
+  }
+
   degreeToMidi(degree, octave) {
     const intervals = MODES[this.mode];
     const octaveOffset = Math.floor(degree / intervals.length);
@@ -49,8 +73,34 @@ export class HarmonicState {
     return 12 * (octave + octaveOffset + 1) + this.tonic + intervals[scaleIndex];
   }
 
+  snapDegreeToChordTone(degree, chordDegree) {
+    const scaleLength = MODES[this.mode].length;
+    const triadDegrees = this.getTriadDegrees(chordDegree);
+    const octaveBand = Math.floor(degree / scaleLength);
+
+    let bestDegree = triadDegrees[0];
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (let octaveOffset = octaveBand - 1; octaveOffset <= octaveBand + 1; octaveOffset++) {
+      for (const triadDegree of triadDegrees) {
+        const candidate = triadDegree + octaveOffset * scaleLength;
+        const distance = Math.abs(candidate - degree);
+        if (distance < bestDistance || (distance === bestDistance && candidate < bestDegree)) {
+          bestDistance = distance;
+          bestDegree = candidate;
+        }
+      }
+    }
+
+    return bestDegree;
+  }
+
+  degreeToChordMidi(degree, chordDegree, octave) {
+    return this.degreeToMidi(this.snapDegreeToChordTone(degree, chordDegree), octave);
+  }
+
   getTriadMidi(degree, octave) {
-    return [degree, degree + 2, degree + 4].map(scaleDegree => this.degreeToMidi(scaleDegree, octave));
+    return this.getTriadDegrees(degree).map(scaleDegree => this.degreeToMidi(scaleDegree, octave));
   }
 
   modulate(targetTonic, targetMode, atBar = 0) {

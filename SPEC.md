@@ -81,6 +81,7 @@ The app must use one consistent set of units.
 ### Section unit
 
 - `durationBars` is an integer number of bars
+- `durationBars` must be a power of two
 
 ### Phrase/event unit
 
@@ -136,12 +137,16 @@ Properties:
 
 Required API:
 - `getScalePitchClasses()`
+- `getChordPitchClasses(degree)`
 - `quantizeMidi(midiNote)`
+- `quantizeMidiToChord(midiNote, chordDegree)`
 - `degreeToMidi(degree, octave)`
+- `degreeToChordMidi(degree, chordDegree, octave)`
 - `modulate(targetTonic, targetMode, atBar)`
 
 Invariant:
-- Every emitted note passes through `quantizeMidi()` unless it is an explicitly planned transition note
+- Every emitted note passes through modal quantization unless it is an explicitly planned transition note
+- When a progression is active, melodic events resolve to the current modal chord and may split at chord boundaries so every sounding segment stays chord-aligned
 
 ### Motive
 
@@ -187,6 +192,9 @@ Allowed types:
 - `development`
 - `recapitulation`
 - `coda`
+
+Invariant:
+- section durations are constrained to power-of-two bar counts selected from the allowed range for each section type
 
 ---
 
@@ -342,12 +350,13 @@ Return value:
 ```
 
 Role behavior:
-- Enunciator states the transformed motive on the beat
-- Imitator copies the enunciator with a beat delay and optional small transposition
+- Enunciator states the transformed motive on the beat and resolves melodic notes to the active modal chord
+- Imitator copies the enunciator with a beat delay and optional small transposition, then re-aligns to the active chord
 - Accompanist plays roots and simple chord tones aligned to the current progression
 
 Invariant:
 - Phrase generation must respect tessiture before scheduling
+- Melodic events must remain inside the active modal triad for their full sounding duration
 
 ---
 

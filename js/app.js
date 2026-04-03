@@ -1,12 +1,12 @@
 import { PRNG } from './prng.js?v=2';
-import { HarmonicState, MODES, TONICS } from './harmonic-state.js?v=2';
+import { HarmonicState, MODES, TONICS } from './harmonic-state.js?v=3';
 import { MotiveEngine } from './motive-engine.js?v=2';
-import { FormalEngine } from './formal-engine.js?v=2';
-import { TonalEngine } from './tonal-engine.js?v=2';
-import { VoiceEngine } from './voice-engine.js?v=6';
-import { Scheduler } from './scheduler.js?v=3';
+import { FormalEngine } from './formal-engine.js?v=3';
+import { TonalEngine } from './tonal-engine.js?v=3';
+import { VoiceEngine } from './voice-engine.js?v=8';
+import { Scheduler } from './scheduler.js?v=4';
 import { AudioRenderer } from './audio-renderer.js?v=10';
-import { Section } from './section.js?v=2';
+import { Section } from './section.js?v=3';
 import { SYNTH_INSTRUMENT_ID, SYNTH_INSTRUMENT_OPTION } from './soundfont-catalog.js?v=2';
 
 function clamp(value, min, max) {
@@ -465,12 +465,26 @@ class MusicApp {
     }
 
     if (normalizedIndex !== null) {
+      const visualizer = document.getElementById('form-visualizer');
       const activeBlock = document.querySelector(`.form-block[data-section-index="${normalizedIndex}"]`);
       const activeSummaryCard = document.querySelector(`.section-summary-card[data-section-index="${normalizedIndex}"]`);
 
       activeBlock?.classList.add('is-active');
       activeSummaryCard?.classList.add('is-active');
-      activeBlock?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+
+      if (visualizer && activeBlock) {
+        const leftEdge = activeBlock.offsetLeft;
+        const rightEdge = leftEdge + activeBlock.offsetWidth;
+        const visibleLeft = visualizer.scrollLeft;
+        const visibleRight = visibleLeft + visualizer.clientWidth;
+
+        if (leftEdge < visibleLeft || rightEdge > visibleRight) {
+          visualizer.scrollTo({
+            left: Math.max(0, leftEdge - 12),
+            behavior: 'smooth'
+          });
+        }
+      }
     }
 
     this.activeSectionIndex = normalizedIndex;

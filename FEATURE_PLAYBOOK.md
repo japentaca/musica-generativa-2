@@ -61,6 +61,7 @@ Define exact behavior before writing code:
 - Play/stop remains stable.
 - Same-seed outputs match for form and timeline.
 - Scheduled notes remain in tessiture.
+- Melodic events remain inside the active modal chord, including notes that cross a chord change.
 - Section indicator still tracks transport progression.
 
 ## 6. Required Documentation Updates
@@ -103,3 +104,23 @@ Use this block to record important feature decisions:
 	- scheduler owns bar-position metadata so UI progress stays display-only
 	- reverb send is renderer-only mix state and must not alter generated events or determinism
 - Verification summary: run browser boot, deterministic regeneration, play/stop toggle stability, section and bar progress display, tessiture safety, and live reverb-send updates per voice
+
+### Feature: Modal Chord Alignment
+- Scope: in-scope extension
+- Files touched: `js/harmonic-state.js`, `js/voice-engine.js`, `js/app.js`, `js/tonal-engine.js`, `js/scheduler.js`
+- Contracts affected: harmonic helpers now expose chord-aware quantization and voice phrases preserve full-duration alignment with the active modal chord
+- New invariants:
+	- melodic events must resolve to chord tones from the current section progression, not only the section scale
+	- notes that would span a chord change must split at the boundary so each sounding segment matches the active chord
+	- same seed plus same config must still yield the same timeline after chord alignment
+- Verification summary: run browser boot, deterministic multi-form audits, strict modal chord-segment checks, tessiture safety checks, and live play/stop with section progress updates
+
+### Feature: Power-of-Two Section Durations
+- Scope: in-scope extension
+- Files touched: `js/section.js`, `js/formal-engine.js`, `js/app.js`
+- Contracts affected: `Section.durationBars` is now normalized to power-of-two bar counts valid for the section type
+- New invariants:
+	- every generated section duration must be a power of two
+	- section reconstruction and cloning must preserve the power-of-two duration invariant
+	- same seed plus same config must still yield the same section duration sequence
+- Verification summary: run browser boot, same-seed regeneration, form inspection for power-of-two durations, and play/stop stability

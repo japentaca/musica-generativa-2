@@ -114,11 +114,138 @@ export class VoiceEngine {
     }
   }
 
+  getChordForBeat(progression, timeBeats) {
+    return this.getChordWindowForBeat(progression, timeBeats).chord;
+  }
+
+  getChordWindowForBeat(progression, timeBeats) {
+    if (!Array.isArray(progression) || progression.length === 0) {
+      return {
+        chord: { degree: 0, bars: Number.POSITIVE_INFINITY },
+        startBeat: 0,
+        endBeat: Number.POSITIVE_INFINITY
+      };
+    }
+
+    const targetBeat = Math.max(0, timeBeats);
+    let offset = 0;
+    let lastWindow = {
+      chord: progression[0],
+      startBeat: 0,
+      endBeat: 0
+    };
+
+    for (const chord of progression) {
+      const durationBeats = Math.max(0, Number(chord?.bars) || 0) * 4;
+      if (durationBeats <= 0) {
+        continue;
+      }
+
+      const window = {
+        chord,
+        startBeat: offset,
+        endBeat: offset + durationBeats
+      };
+
+      if (targetBeat < window.endBeat - 0.001) {
+        return window;
+      }
+
+      offset = window.endBeat;
+      lastWindow = window;
+    }
+
+    return lastWindow;
+  }
+
+  resolveDegreeForChord(voice, harmonicState, chordDegree, degree, octave) {
+    const rawMidi = harmonicState.degreeToChordMidi(degree, chordDegree, octave);
+    return this.fitNoteToVoice(voice, harmonicState, rawMidi);
+  }
+
+  resolveDegreeForProgression(voice, harmonicState, progression, timeBeats, degree, octave) {
+    const activeChord = this.getChordForBeat(progression, timeBeats);
+    return this.resolveDegreeForChord(voice, harmonicState, activeChord.degree, degree, octave);
+  }
+
+  alignMidiToProgression(voice, harmonicState, progression, timeBeats, midiNote) {
+    const activeChord = this.getChordForBeat(progression, timeBeats);
+    const chordAligned = harmonicState.quantizeMidiToChord(midiNote, activeChord.degree);
+    return this.fitNoteToVoice(voice, harmonicState, chordAligned);
+  }
+
+  buildChordAlignedDegreeEvents(voice, harmonicState, progression, timeBeats, degree, octave, durationBeats, velocity) {
+    if (!Number.isFinite(durationBeats) || durationBeats <= 0) {
+      return [];
+    }
+
+    const events = [];
+    let cursor = timeBeats;
+    let remaining = durationBeats;
+
+    while (remaining > 0.001) {
+      const activeWindow = this.getChordWindowForBeat(progression, cursor);
+      const sliceDuration = Number.isFinite(activeWindow.endBeat)
+        ? Math.min(remaining, Math.max(0, activeWindow.endBeat - cursor))
+        : remaining;
+
+      if (sliceDuration <= 0.001) {
+        break;
+      }
+
+      events.push({
+        timeBeats: cursor,
+        midiNote: this.resolveDegreeForChord(voice, harmonicState, activeWindow.chord.degree, degree, octave),
+        durationBeats: sliceDuration,
+        velocity
+      });
+
+      cursor += sliceDuration;
+      remaining -= sliceDuration;
+    }
+
+    return events;
+  }
+
+  buildChordAlignedMidiEvents(voice, harmonicState, progression, timeBeats, midiNote, durationBeats, velocity) {
+    if (!Number.isFinite(durationBeats) || durationBeats <= 0) {
+      return [];
+    }
+
+    const events = [];
+    let cursor = timeBeats;
+    let remaining = durationBeats;
+
+    while (remaining > 0.001) {
+      const activeWindow = this.getChordWindowForBeat(progression, cursor);
+      const sliceDuration = Number.isFinite(activeWindow.endBeat)
+        ? Math.min(remaining, Math.max(0, activeWindow.endBeat - cursor))
+        : remaining;
+
+      if (sliceDuration <= 0.001) {
+        break;
+      }
+
+      events.push({
+        timeBeats: cursor,
+        midiNote: this.alignMidiToProgression(voice, harmonicState, progression, cursor, midiNote),
+        durationBeats: sliceDuration,
+        velocity
+      });
+
+      cursor += sliceDuration;
+      remaining -= sliceDuration;
+    }
+
+    return events;
+  }
+
   generateFugueExpositionPhrases(voices, motive, harmonicState, section, prng, context) {
     const result = new Map();
     voices.forEach(v => result.set(v.id, []));
 
     const sectionBeats = section.durationBars * 4;
+    const progression = context.progression || [];
     const subjectDuration = motive.getTotalDurationBeats();
     const entryDelay = Math.max(subjectDuration, 4);
     const answer = motive.transpose(4);
@@ -137,14 +264,16 @@ export class VoiceEngine {
       let offset = entryBeat;
       for (const note of entryMotive.notes) {
         if (offset + note.durationBeats > sectionBeats + 0.001) break;
-        const rawMidi = harmonicState.degreeToMidi(note.degree, targetOctave);
-        const fitted = this.fitNoteToVoice(voice, harmonicState, rawMidi);
-        result.get(voice.id).push({
-          timeBeats: offset,
-          midiNote: fitted,
-          durationBeats: note.durationBeats,
-          velocity: this.scaleVelocity(note.velocity, voice.volume)
-        });
+        result.get(voice.id).push(...this.buildChordAlignedDegreeEvents(
+          voice,
+          harmonicState,
+          progression,
+          offset,
+          note.degree,
+          targetOctave,
+          note.durationBeats,
+          this.scaleVelocity(note.velocity, voice.volume)
+        ));
         offset += note.durationBeats;
       }
 
@@ -154,14 +283,16 @@ export class VoiceEngine {
         const csMotiveToUse = voiceIndex % 2 === 0 ? countersubject : motive.retrograde();
         for (const note of csMotiveToUse.notes) {
           if (csOffset + note.durationBeats > sectionBeats + 0.001) break;
-          const rawMidi = harmonicState.degreeToMidi(note.degree, targetOctave);
-          const fitted = this.fitNoteToVoice(voice, harmonicState, rawMidi);
-          result.get(voice.id).push({
-            timeBeats: csOffset,
-            midiNote: fitted,
-            durationBeats: note.durationBeats,
-            velocity: this.scaleVelocity(note.velocity * 0.8, voice.volume)
-          });
+          result.get(voice.id).push(...this.buildChordAlignedDegreeEvents(
+            voice,
+            harmonicState,
+            progression,
+            csOffset,
+            note.degree,
+            targetOctave,
+            note.durationBeats,
+            this.scaleVelocity(note.velocity * 0.8, voice.volume)
+          ));
           csOffset += note.durationBeats;
         }
       }
@@ -175,14 +306,16 @@ export class VoiceEngine {
           let scheduledThisPass = false;
           for (const note of transposedFragment.notes) {
             if (freeOffset + note.durationBeats > sectionBeats + 0.001) break;
-            const rawMidi = harmonicState.degreeToMidi(note.degree, targetOctave);
-            const fitted = this.fitNoteToVoice(voice, harmonicState, rawMidi);
-            result.get(voice.id).push({
-              timeBeats: freeOffset,
-              midiNote: fitted,
-              durationBeats: note.durationBeats,
-              velocity: this.scaleVelocity(note.velocity * 0.65, voice.volume)
-            });
+            result.get(voice.id).push(...this.buildChordAlignedDegreeEvents(
+              voice,
+              harmonicState,
+              progression,
+              freeOffset,
+              note.degree,
+              targetOctave,
+              note.durationBeats,
+              this.scaleVelocity(note.velocity * 0.65, voice.volume)
+            ));
             freeOffset += note.durationBeats;
             scheduledThisPass = true;
           }
@@ -199,6 +332,7 @@ export class VoiceEngine {
     voices.forEach(v => result.set(v.id, []));
 
     const sectionBeats = section.durationBars * 4;
+    const progression = context.progression || [];
     const fragment = motive.fragment(0, Math.min(3, motive.length));
     const fragmentDur = fragment.getTotalDurationBeats();
     const sortedVoices = [...voices].sort((a, b) => b.tessiture.maxOctave - a.tessiture.maxOctave);
@@ -217,14 +351,16 @@ export class VoiceEngine {
 
         for (const note of currentFragment.notes) {
           if (globalOffset + note.durationBeats > sectionBeats + 0.001) break;
-          const rawMidi = harmonicState.degreeToMidi(note.degree, targetOctave);
-          const fitted = this.fitNoteToVoice(voice, harmonicState, rawMidi);
-          result.get(voice.id).push({
-            timeBeats: globalOffset,
-            midiNote: fitted,
-            durationBeats: note.durationBeats,
-            velocity: this.scaleVelocity(note.velocity * 0.75, voice.volume)
-          });
+          result.get(voice.id).push(...this.buildChordAlignedDegreeEvents(
+            voice,
+            harmonicState,
+            progression,
+            globalOffset,
+            note.degree,
+            targetOctave,
+            note.durationBeats,
+            this.scaleVelocity(note.velocity * 0.75, voice.volume)
+          ));
           globalOffset += note.durationBeats;
           scheduledThisRound = true;
         }
@@ -243,6 +379,7 @@ export class VoiceEngine {
     voices.forEach(v => result.set(v.id, []));
 
     const sectionBeats = section.durationBars * 4;
+    const progression = context.progression || [];
     const subjectDuration = motive.getTotalDurationBeats();
     if (!Number.isFinite(subjectDuration) || subjectDuration <= 0) {
       return result;
@@ -268,14 +405,16 @@ export class VoiceEngine {
         let offset = entryBeat;
         for (const note of entryMotive.notes) {
           if (offset + note.durationBeats > sectionBeats + 0.001) break;
-          const rawMidi = harmonicState.degreeToMidi(note.degree, targetOctave);
-          const fitted = this.fitNoteToVoice(voice, harmonicState, rawMidi);
-          result.get(voice.id).push({
-            timeBeats: offset,
-            midiNote: fitted,
-            durationBeats: note.durationBeats,
-            velocity: this.scaleVelocity(note.velocity * (0.8 + round * 0.05), voice.volume)
-          });
+          result.get(voice.id).push(...this.buildChordAlignedDegreeEvents(
+            voice,
+            harmonicState,
+            progression,
+            offset,
+            note.degree,
+            targetOctave,
+            note.durationBeats,
+            this.scaleVelocity(note.velocity * (0.8 + round * 0.05), voice.volume)
+          ));
           offset += note.durationBeats;
         }
       });
@@ -291,6 +430,7 @@ export class VoiceEngine {
     voices.forEach(v => result.set(v.id, []));
 
     const sectionBeats = section.durationBars * 4;
+    const progression = context.progression || [];
     const melodicVoices = [...voices].filter(v => v.role !== 'accompanist')
       .sort((a, b) => b.tessiture.maxOctave - a.tessiture.maxOctave);
     const accompanist = voices.find(v => v.role === 'accompanist');
@@ -332,14 +472,16 @@ export class VoiceEngine {
       let offset = globalOffset;
       for (const note of callMotive.notes) {
         if (offset + note.durationBeats > sectionBeats + 0.001) break;
-        const rawMidi = harmonicState.degreeToMidi(note.degree, callerOctave);
-        const fitted = this.fitNoteToVoice(caller, harmonicState, rawMidi);
-        result.get(caller.id).push({
-          timeBeats: offset,
-          midiNote: fitted,
-          durationBeats: note.durationBeats,
-          velocity: this.scaleVelocity(note.velocity, caller.volume)
-        });
+        result.get(caller.id).push(...this.buildChordAlignedDegreeEvents(
+          caller,
+          harmonicState,
+          progression,
+          offset,
+          note.degree,
+          callerOctave,
+          note.durationBeats,
+          this.scaleVelocity(note.velocity, caller.volume)
+        ));
         offset += note.durationBeats;
       }
 
@@ -358,14 +500,16 @@ export class VoiceEngine {
       offset = responseStart;
       for (const note of responseMotive.notes) {
         if (offset + note.durationBeats > sectionBeats + 0.001) break;
-        const rawMidi = harmonicState.degreeToMidi(note.degree, responderOctave);
-        const fitted = this.fitNoteToVoice(responder, harmonicState, rawMidi);
-        result.get(responder.id).push({
-          timeBeats: offset,
-          midiNote: fitted,
-          durationBeats: note.durationBeats,
-          velocity: this.scaleVelocity(note.velocity * 0.9, responder.volume)
-        });
+        result.get(responder.id).push(...this.buildChordAlignedDegreeEvents(
+          responder,
+          harmonicState,
+          progression,
+          offset,
+          note.degree,
+          responderOctave,
+          note.durationBeats,
+          this.scaleVelocity(note.velocity * 0.9, responder.volume)
+        ));
         offset += note.durationBeats;
       }
 
@@ -408,15 +552,16 @@ export class VoiceEngine {
             continue;
           }
 
-          const rawMidi = harmonicState.degreeToMidi(chord.degree + note.degree, targetOctave);
-          const fitted = this.fitNoteToVoice(voice, harmonicState, rawMidi);
-
-          events.push({
-            timeBeats: sectionOffset + blockOffset,
-            midiNote: fitted,
-            durationBeats: note.durationBeats,
-            velocity: this.scaleVelocity(note.velocity, voice.volume)
-          });
+          events.push(...this.buildChordAlignedDegreeEvents(
+            voice,
+            harmonicState,
+            progression,
+            sectionOffset + blockOffset,
+            chord.degree + note.degree,
+            targetOctave,
+            note.durationBeats,
+            this.scaleVelocity(note.velocity, voice.volume)
+          ));
 
           blockOffset += note.durationBeats;
           scheduledDuringPass = true;
@@ -443,20 +588,30 @@ export class VoiceEngine {
     }
 
     const sectionBeats = section.durationBars * 4;
+    const progression = section.progression || [];
     const delay = voice.imitatorDelayBeats;
     const semitoneShift = prng.pick([0, 0, 2, -2]);
 
-    return enunciatorEvents
-      .map(event => {
-        const shiftedNote = this.fitNoteToVoice(voice, harmonicState, event.midiNote + semitoneShift);
-        return {
-          timeBeats: event.timeBeats + delay,
-          midiNote: shiftedNote,
-          durationBeats: event.durationBeats,
-          velocity: this.scaleVelocity(Math.max(0.2, event.velocity * 0.85), voice.volume)
-        };
-      })
-      .filter(event => event.timeBeats < sectionBeats);
+    const events = [];
+
+    enunciatorEvents.forEach(event => {
+        const shiftedTime = event.timeBeats + delay;
+        if (shiftedTime >= sectionBeats) {
+          return;
+        }
+
+        events.push(...this.buildChordAlignedMidiEvents(
+          voice,
+          harmonicState,
+          progression,
+          shiftedTime,
+          event.midiNote + semitoneShift,
+          event.durationBeats,
+          this.scaleVelocity(Math.max(0.2, event.velocity * 0.85), voice.volume)
+        ));
+      });
+
+    return events;
   }
 
   generateAccompanistPhrase(voice, harmonicState, progression, section) {

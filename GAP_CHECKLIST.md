@@ -8,14 +8,14 @@ This checklist tracks the current baseline against `SPEC.md` and defines the req
 |---|---|---|---|
 | Trimmed browser shell | `index.html`, `css/style.css` | Complete | UI now exposes only the reduced global controls, voice controls, motive controls, form summary, and playback status. |
 | Deterministic PRNG wrapper | `js/prng.js` | Complete | Uses `seedrandom` when present and falls back to a deterministic local generator for non-browser validation. |
-| Harmonic model | `js/harmonic-state.js` | Complete | Limited to major/minor, with explicit pitch-class scale lookup, MIDI quantization, and degree-to-MIDI resolution. |
+| Harmonic model | `js/harmonic-state.js` | Complete | Limited to major/minor, with explicit pitch-class scale lookup, scale/chord MIDI quantization, and degree-to-MIDI resolution for modal triads. |
 | Motive model | `js/motive.js` | Complete | Uses `{ degree, durationBeats, velocity }` and beat-based transformations. |
 | Voice model | `js/voice.js` | Complete | Uses `roleOverride`, resolved `role`, tessiture helpers, beat delay for imitators, and persisted `reverbSend` mix state. |
-| Section model | `js/section.js` | Complete | Keeps section type, duration, tension, density, targets, and transformation allowances. |
+| Section model | `js/section.js` | Complete | Keeps section type, duration, tension, density, targets, and transformation allowances, with section durations normalized to power-of-two bar counts per section type. |
 | Tonal planning | `js/tonal-engine.js` | Complete | Constrained to static, dominant, subdominant, and relative targets with finite progression templates. |
-| Formal generation | `js/formal-engine.js` | Complete | Generates finite sonata/fugue/dialogue/free forms with deterministic section counts clamped to 3 to 30. |
+| Formal generation | `js/formal-engine.js` | Complete | Generates finite sonata/fugue/dialogue/free forms with deterministic section counts clamped to 3 to 30 and section durations chosen from power-of-two bar counts only. |
 | Motive generation | `js/motive-engine.js` | Complete | Generates 1 to 2 leitmotifs and selects section-aware transformations. |
-| Voice phrase generation | `js/voice-engine.js` | Complete | Supports enunciator, imitator, and accompanist only. |
+| Voice phrase generation | `js/voice-engine.js` | Complete | Supports enunciator, imitator, and accompanist only, with melodic events aligned to the active modal chord across chord boundaries. |
 | Precomputed scheduling | `js/scheduler.js` | Complete | Builds the full timeline before playback and exposes section index plus bar-position metadata for the UI. |
 | Synth and sampler renderer | `js/audio-renderer.js`, `js/soundfont-catalog.js` | Complete | Per-voice instrument selection supports synth plus metadata-listed samplers with synth fallback on load failure; beat-to-seconds conversion and shared reverb-bus mixing stay at the renderer boundary. |
 | App orchestration | `js/app.js` | Complete | Bootstraps the app, renders dynamic UI, generates deterministic timelines, and manages single-toggle transport state with active section highlighting and section/bar status displays. |
@@ -46,8 +46,10 @@ This checklist tracks the current baseline against `SPEC.md` and defines the req
 | 30-section display and section tracking | Passed | Browser evaluation set section count to `30`, confirmed 30 visualized and summarized sections, and verified active section highlighting plus section-local bar display updates. |
 | Same-seed determinism | Passed | Browser evaluation regenerated twice with seed `42` and produced identical form and timeline payloads. |
 | Tessiture safety | Passed | Browser evaluation verified every scheduled note stays inside each voice tessiture range. |
+| Modal chord adherence | Passed | Browser evaluation audited sonata, fugue, dialogue, and free timelines in major and minor modes and confirmed every sounding note segment stays inside the active modal triad. |
 | Per-voice reverb send | Passed | Browser interaction confirmed each voice slider updates the shared reverb-bus send without forcing timeline regeneration. |
 | Bare `Math.random()` usage | Passed | Workspace search over `js/**` found no direct usages. |
+| Power-of-two section durations | Passed | Code path constrains generated and reconstructed sections to per-type power-of-two bar counts only. |
 
 ## Feature Addition Checklist (Required)
 
@@ -70,6 +72,7 @@ Use this checklist for every new feature before calling work complete.
 
 - [ ] Same-seed determinism still holds for form and timeline output.
 - [ ] Notes stay inside voice tessiture across all generated voices.
+- [ ] Melodic events stay aligned to the active modal chord, including across chord changes.
 - [ ] Play/stop remains clean, with no stale scheduled parts.
 - [ ] Current-section and current-bar displays still track transport position correctly.
 - [ ] Sampler voice selection loads metadata-listed instruments or falls back to synth without runtime crash.

@@ -19,7 +19,7 @@ const SECTION_COLORS = {
 export class Section {
   constructor(type, config = {}) {
     this.type = SECTION_TYPES.includes(type) ? type : 'exposition';
-    this.durationBars = Number.isFinite(config.durationBars) ? config.durationBars : 4;
+    this.durationBars = Section.normalizeDurationBars(this.type, config.durationBars);
     this.tension = Number.isFinite(config.tension) ? config.tension : 0.5;
     this.density = Number.isFinite(config.density) ? config.density : 0.5;
     this.targetTonic = Number.isFinite(config.targetTonic) ? config.targetTonic : 0;
@@ -44,6 +44,46 @@ export class Section {
     };
 
     return defaults[type] || defaults.exposition;
+  }
+
+  static getAllowedDurationBars(type) {
+    const defaults = Section.defaultsForType(type);
+    const durations = [];
+
+    for (let bars = 1; bars <= defaults.maxBars; bars *= 2) {
+      if (bars >= defaults.minBars) {
+        durations.push(bars);
+      }
+    }
+
+    if (durations.length > 0) {
+      return durations;
+    }
+
+    return [4];
+  }
+
+  static normalizeDurationBars(type, durationBars) {
+    const allowedDurations = Section.getAllowedDurationBars(type);
+
+    if (!Number.isFinite(durationBars)) {
+      return allowedDurations[0];
+    }
+
+    return allowedDurations.reduce((closest, candidate) => {
+      const candidateDistance = Math.abs(candidate - durationBars);
+      const closestDistance = Math.abs(closest - durationBars);
+
+      if (candidateDistance < closestDistance) {
+        return candidate;
+      }
+
+      if (candidateDistance === closestDistance) {
+        return candidate < closest ? candidate : closest;
+      }
+
+      return closest;
+    }, allowedDurations[0]);
   }
 
   static getColorForType(type) {
