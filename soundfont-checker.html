@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Soundfont Checker</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/15.1.4/Tone.js"></script>
+  <style>
+    :root {
+      --bg: #10131a;
+      --panel: #161b24;
+      --panel-2: #1d2430;
+      --text: #e8edf6;
+      --muted: #9aa7bc;
+      --good: #0f9d58;
+      --bad: #d93025;
+      --busy: #f9ab00;
+      --border: #2b3445;
+      --accent: #64b5f6;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      background: linear-gradient(165deg, #0b0e14, #121824 60%, #0f141f);
+      color: var(--text);
+      font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.35rem;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px;
+      align-items: end;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .field label {
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .field input {
+      width: 100%;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 8px;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 8px 14px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    button.primary {
+      background: #0f4a80;
+      border-color: #1e6db4;
+    }
+
+    button.warn {
+      background: #5f3605;
+      border-color: #9e5f0f;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 10px;
+    }
+
+    .pill {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+    }
+
+    .pill .label {
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+    }
+
+    .pill .value {
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+
+    .good {
+      color: #7ce6a6;
+    }
+
+    .bad {
+      color: #ff8f87;
+    }
+
+    .busy {
+      color: #ffd77d;
+    }
+
+    .table-wrap {
+      overflow: auto;
+      max-height: 62vh;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--panel-2);
+      min-width: 720px;
+    }
+
+    th,
+    td {
+      text-align: left;
+      padding: 10px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+      font-size: 0.9rem;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: #20293a;
+      color: #d6def0;
+    }
+
+    td.status {
+      font-weight: 700;
+      width: 150px;
+      white-space: nowrap;
+    }
+
+    .status-pending {
+      color: var(--muted);
+    }
+
+    .status-loading {
+      color: #ffd77d;
+    }
+
+    .status-ok {
+      color: #7ce6a6;
+    }
+
+    .status-fail {
+      color: #ff8f87;
+    }
+
+    .mono {
+      font-family: Consolas, Menlo, Monaco, monospace;
+      font-size: 0.82rem;
+      white-space: pre-wrap;
+      color: #c2cee6;
+    }
+
+    @media (max-width: 720px) {
+      body {
+        padding: 12px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <section class="card">
+      <h1>Soundfont Loader and Playback Checker</h1>
+      <p>
+        This page loads instruments from soundfonts/metadata.json, tries to build a Tone.Sampler for each one,
+        plays a short test note, and reports which instruments failed.
+      </p>
+    </section>
+
+    <section class="card">
+      <div class="controls">
+        <div class="field">
+          <label for="timeoutMs">Load timeout (ms)</label>
+          <input id="timeoutMs" type="number" min="100" step="100" value="8000">
+        </div>
+        <div class="field">
+          <label for="playMs">Test note length (ms)</label>
+          <input id="playMs" type="number" min="100" step="50" value="450">
+        </div>
+        <div class="field">
+          <label for="gapMs">Gap between instruments (ms)</label>
+          <input id="gapMs" type="number" min="0" step="50" value="180">
+        </div>
+        <div class="field">
+          <label for="volumeDb">Playback gain (dB)</label>
+          <input id="volumeDb" type="number" min="-40" max="6" step="1" value="-8">
+        </div>
+      </div>
+      <div class="buttons" style="margin-top:12px;">
+        <button id="startBtn" class="primary">Start Full Check</button>
+        <button id="stopBtn" class="warn" disabled>Stop</button>
+        <button id="clearBtn">Clear Results</button>
+      </div>
+    </section>
+
+    <section class="card summary" id="summary">
+      <div class="pill">
+        <div class="label">State</div>
+        <div class="value busy" id="stateText">Idle</div>
+      </div>
+      <div class="pill">
+        <div class="label">Processed</div>
+        <div class="value" id="processedText">0 / 0</div>
+      </div>
+      <div class="pill">
+        <div class="label">Working</div>
+        <div class="value good" id="okText">0</div>
+      </div>
+      <div class="pill">
+        <div class="label">Not Working</div>
+        <div class="value bad" id="failText">0</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:220px;">Instrument</th>
+              <th style="width:150px;">Status</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody id="resultsBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const state = {
+      running: false,
+      abort: false,
+      rows: new Map(),
+      totals: { total: 0, processed: 0, ok: 0, fail: 0 }
+    };
+
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const resultsBody = document.getElementById('resultsBody');
+    const stateText = document.getElementById('stateText');
+    const processedText = document.getElementById('processedText');
+    const okText = document.getElementById('okText');
+    const failText = document.getElementById('failText');
+
+    function setStateLabel(text, className) {
+      stateText.textContent = text;
+      stateText.className = `value ${className}`;
+    }
+
+    function syncSummary() {
+      processedText.textContent = `${state.totals.processed} / ${state.totals.total}`;
+      okText.textContent = String(state.totals.ok);
+      failText.textContent = String(state.totals.fail);
+    }
+
+    function wait(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function normalizePath(path) {
+      return String(path || '').replace(/\\/g, '/').replace(/^\/+/, '');
+    }
+
+    function encodePathForUrl(path) {
+      return String(path || '')
+        .split('/')
+        .map(segment => encodeURIComponent(segment))
+        .join('/');
+    }
+
+    function midiToNoteName(midi) {
+      const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+      const clamped = Math.max(0, Math.min(127, Math.round(Number(midi) || 60)));
+      const name = noteNames[clamped % 12];
+      const octave = Math.floor(clamped / 12) - 1;
+      return `${name}${octave}`;
+    }
+
+    function buildSamplerUrls(samples) {
+      const urls = {};
+      const seenRoots = new Set();
+
+      Object.values(samples || {}).forEach(sample => {
+        const root = Number(sample && sample.root);
+        const path = normalizePath(sample && sample.path);
+
+        if (!Number.isFinite(root) || !path || seenRoots.has(root)) {
+          return;
+        }
+
+        seenRoots.add(root);
+        urls[midiToNoteName(root)] = encodePathForUrl(path);
+      });
+
+      return urls;
+    }
+
+    function hasUsableBuffers(sampler) {
+      const store = sampler && sampler._buffers && sampler._buffers._buffers;
+      if (!store) {
+        return false;
+      }
+
+      if (store instanceof Map) {
+        return store.size > 0;
+      }
+
+      return Object.keys(store).length > 0;
+    }
+
+    async function withTimeout(promiseFactory, timeoutMs, timeoutMessage) {
+      let timeoutId = null;
+
+      const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error(timeoutMessage));
+        }, timeoutMs);
+      });
+
+      try {
+        return await Promise.race([promiseFactory(), timeoutPromise]);
+      } finally {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+      }
+    }
+
+    function createRow(instrumentName) {
+      const tr = document.createElement('tr');
+      const instrumentCell = document.createElement('td');
+      const statusCell = document.createElement('td');
+      const detailsCell = document.createElement('td');
+
+      instrumentCell.textContent = instrumentName;
+      statusCell.className = 'status status-pending';
+      statusCell.textContent = 'Pending';
+      detailsCell.className = 'mono';
+      detailsCell.textContent = '-';
+
+      tr.appendChild(instrumentCell);
+      tr.appendChild(statusCell);
+      tr.appendChild(detailsCell);
+      resultsBody.appendChild(tr);
+
+      state.rows.set(instrumentName, { statusCell, detailsCell });
+    }
+
+    function setRow(instrumentName, statusTextValue, statusClass, details) {
+      const row = state.rows.get(instrumentName);
+      if (!row) {
+        return;
+      }
+
+      row.statusCell.textContent = statusTextValue;
+      row.statusCell.className = `status ${statusClass}`;
+      row.detailsCell.textContent = details || '-';
+    }
+
+    function clearResults() {
+      if (state.running) {
+        return;
+      }
+
+      state.rows.clear();
+      state.totals = { total: 0, processed: 0, ok: 0, fail: 0 };
+      resultsBody.innerHTML = '';
+      setStateLabel('Idle', 'busy');
+      syncSummary();
+    }
+
+    function getFirstLibrary(metadata) {
+      const catalog = metadata && metadata.catalog;
+      if (!catalog || typeof catalog !== 'object') {
+        throw new Error('metadata catalog missing');
+      }
+
+      const firstKey = Object.keys(catalog)[0];
+      if (!firstKey) {
+        throw new Error('metadata catalog is empty');
+      }
+
+      return catalog[firstKey];
+    }
+
+    async function loadSamplerForInstrument(instrumentName, instrument, baseUrl, timeoutMs, volumeDb) {
+      const articulation = instrument && instrument.articulations && instrument.articulations[0];
+      if (!articulation || !articulation.samples) {
+        throw new Error('missing articulation or samples');
+      }
+
+      const urls = buildSamplerUrls(articulation.samples);
+      const noteNames = Object.keys(urls);
+      if (noteNames.length === 0) {
+        throw new Error('no sample roots mapped');
+      }
+
+      const channel = new Tone.Channel({ volume: volumeDb }).toDestination();
+      let sampler = null;
+
+      try {
+        sampler = await withTimeout(
+          () => new Promise((resolve, reject) => {
+            sampler = new Tone.Sampler({
+              urls,
+              baseUrl,
+              onload: () => resolve(sampler),
+              onerror: (error) => reject(error || new Error('sampler load error'))
+            }).connect(channel);
+          }),
+          timeoutMs,
+          `timeout after ${timeoutMs} ms`
+        );
+
+        if (!hasUsableBuffers(sampler)) {
+          throw new Error('sampler loaded with no playable buffers');
+        }
+
+        const testNote = noteNames[Math.floor(noteNames.length / 2)] || noteNames[0];
+        return { sampler, channel, testNote, mappedRoots: noteNames.length };
+      } catch (error) {
+        if (sampler) {
+          sampler.dispose();
+        }
+        channel.dispose();
+        throw error;
+      }
+    }
+
+    async function runCheck() {
+      if (state.running) {
+        return;
+      }
+
+      state.running = true;
+      state.abort = false;
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      clearBtn.disabled = true;
+      setStateLabel('Preparing', 'busy');
+
+      try {
+        await Tone.start();
+
+        const response = await fetch('soundfonts/metadata.json');
+        if (!response.ok) {
+          throw new Error(`failed to fetch metadata (${response.status})`);
+        }
+
+        const metadata = await response.json();
+        const library = getFirstLibrary(metadata);
+        const instruments = Object.entries(library.instruments || {}).sort((a, b) => a[0].localeCompare(b[0]));
+
+        state.rows.clear();
+        resultsBody.innerHTML = '';
+        instruments.forEach(([instrumentName]) => createRow(instrumentName));
+
+        state.totals = { total: instruments.length, processed: 0, ok: 0, fail: 0 };
+        syncSummary();
+
+        const timeoutMs = Math.max(100, Number(document.getElementById('timeoutMs').value) || 8000);
+        const playMs = Math.max(100, Number(document.getElementById('playMs').value) || 450);
+        const gapMs = Math.max(0, Number(document.getElementById('gapMs').value) || 180);
+        const volumeDb = Number(document.getElementById('volumeDb').value);
+
+        const normalizedBase = normalizePath(library.basePath || 'soundfonts').replace(/\/+$/, '');
+        const baseUrl = normalizedBase ? `${normalizedBase}/` : '';
+
+        setStateLabel('Running', 'busy');
+
+        for (const [instrumentName, instrument] of instruments) {
+          if (state.abort) {
+            setRow(instrumentName, 'Skipped', 'status-pending', 'stopped by user');
+            continue;
+          }
+
+          setRow(instrumentName, 'Loading', 'status-loading', 'building sampler');
+
+          let sampler = null;
+          let channel = null;
+
+          try {
+            const loaded = await loadSamplerForInstrument(instrumentName, instrument, baseUrl, timeoutMs, volumeDb);
+            sampler = loaded.sampler;
+            channel = loaded.channel;
+
+            setRow(instrumentName, 'Playing', 'status-loading', `test note ${loaded.testNote}, roots ${loaded.mappedRoots}`);
+            sampler.triggerAttackRelease(loaded.testNote, playMs / 1000, undefined, 0.78);
+            await wait(playMs);
+
+            setRow(instrumentName, 'OK', 'status-ok', `loaded and played (${loaded.mappedRoots} mapped roots)`);
+            state.totals.ok += 1;
+          } catch (error) {
+            const message = error && error.message ? error.message : String(error);
+            setRow(instrumentName, 'Failed', 'status-fail', message);
+            state.totals.fail += 1;
+          } finally {
+            state.totals.processed += 1;
+            syncSummary();
+
+            if (sampler) {
+              sampler.dispose();
+            }
+            if (channel) {
+              channel.dispose();
+            }
+          }
+
+          if (state.abort) {
+            break;
+          }
+
+          if (gapMs > 0) {
+            await wait(gapMs);
+          }
+        }
+
+        if (state.abort) {
+          setStateLabel('Stopped', 'bad');
+        } else if (state.totals.fail > 0) {
+          setStateLabel('Completed With Failures', 'bad');
+        } else {
+          setStateLabel('Completed', 'good');
+        }
+      } catch (error) {
+        const message = error && error.message ? error.message : String(error);
+        setStateLabel('Error', 'bad');
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>Global</td><td class="status status-fail">Error</td><td class="mono">${message}</td>`;
+        resultsBody.prepend(tr);
+      } finally {
+        state.running = false;
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        clearBtn.disabled = false;
+      }
+    }
+
+    startBtn.addEventListener('click', runCheck);
+
+    stopBtn.addEventListener('click', () => {
+      state.abort = true;
+      stopBtn.disabled = true;
+      setStateLabel('Stopping...', 'busy');
+    });
+
+    clearBtn.addEventListener('click', clearResults);
+
+    syncSummary();
+  </script>
+</body>
+
+</html>

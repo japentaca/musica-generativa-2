@@ -1,0 +1,73 @@
+export const TONICS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+export const MODES = {
+  major: [0, 2, 4, 5, 7, 9, 11],
+  minor: [0, 2, 3, 5, 7, 8, 10]
+};
+
+function mod(value, divisor) {
+  return ((value % divisor) + divisor) % divisor;
+}
+
+export class HarmonicState {
+  constructor(tonic = 0, mode = 'major', currentDegree = 0) {
+    this.tonic = mod(tonic, 12);
+    this.mode = MODES[mode] ? mode : 'major';
+    this.currentDegree = currentDegree;
+    this.history = [{ tonic: this.tonic, mode: this.mode, atBar: 0 }];
+  }
+
+  getScalePitchClasses() {
+    return MODES[this.mode].map(interval => mod(this.tonic + interval, 12));
+  }
+
+  quantizeMidi(midiNote) {
+    const scalePitchClasses = this.getScalePitchClasses();
+    const baseOctave = Math.floor(midiNote / 12);
+
+    let bestNote = midiNote;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (let octave = baseOctave - 1; octave <= baseOctave + 1; octave++) {
+      for (const pitchClass of scalePitchClasses) {
+        const candidate = octave * 12 + pitchClass;
+        const distance = Math.abs(candidate - midiNote);
+        if (distance < bestDistance || (distance === bestDistance && candidate < bestNote)) {
+          bestDistance = distance;
+          bestNote = candidate;
+        }
+      }
+    }
+
+    return bestNote;
+  }
+
+  degreeToMidi(degree, octave) {
+    const intervals = MODES[this.mode];
+    const octaveOffset = Math.floor(degree / intervals.length);
+    const scaleIndex = mod(degree, intervals.length);
+    return 12 * (octave + octaveOffset + 1) + this.tonic + intervals[scaleIndex];
+  }
+
+  getTriadMidi(degree, octave) {
+    return [degree, degree + 2, degree + 4].map(scaleDegree => this.degreeToMidi(scaleDegree, octave));
+  }
+
+  modulate(targetTonic, targetMode, atBar = 0) {
+    this.tonic = mod(targetTonic, 12);
+    this.mode = MODES[targetMode] ? targetMode : this.mode;
+    this.currentDegree = 0;
+    this.history.push({ tonic: this.tonic, mode: this.mode, atBar });
+    return this;
+  }
+
+  clone() {
+    const cloned = new HarmonicState(this.tonic, this.mode, this.currentDegree);
+    cloned.history = this.history.map(entry => ({ ...entry }));
+    return cloned;
+  }
+
+  toString() {
+    return `${TONICS[this.tonic]} ${this.mode}`;
+  }
+}

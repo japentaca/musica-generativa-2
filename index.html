@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deterministic Tonal Generator</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/seedrandom/3.0.5/seedrandom.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/15.1.4/Tone.js"></script>
+  <script>
+    if (typeof Math.seedrandom === 'function') {
+      const originalSeedrandom = Math.seedrandom;
+      Math.seedrandom = function (seed, options) {
+        const direct = originalSeedrandom(seed, options);
+        if (typeof direct === 'function') {
+          return direct;
+        }
+
+        const constructed = new originalSeedrandom(seed, options);
+        if (typeof constructed === 'function') {
+          return constructed;
+        }
+
+        return direct;
+      };
+    }
+  </script>
+</head>
+
+<body>
+  <div class="app-container">
+    <header class="app-header">
+      <h1>Deterministic Tonal Generator</h1>
+      <p>Finite multi-voice tonal generation with precomputed playback and a reduced MVP surface.</p>
+    </header>
+
+    <div class="global-controls">
+      <div class="control-group">
+        <label for="bpm">BPM</label>
+        <input type="number" id="bpm" value="108" min="40" max="200">
+      </div>
+      <div class="control-group">
+        <label for="seed">Seed</label>
+        <input type="number" id="seed" value="42" min="1">
+      </div>
+      <div class="control-group">
+        <label>&nbsp;</label>
+        <button class="btn btn-secondary" id="randomize-seed">Randomize</button>
+      </div>
+      <div class="control-group">
+        <label for="voice-count">Voices</label>
+        <input type="number" id="voice-count" value="3" min="2" max="4">
+      </div>
+      <div class="control-group">
+        <label for="initial-tonic">Initial Tonic</label>
+        <select id="initial-tonic">
+          <option value="0">C</option>
+          <option value="1">C#</option>
+          <option value="2">D</option>
+          <option value="3">D#</option>
+          <option value="4">E</option>
+          <option value="5">F</option>
+          <option value="6">F#</option>
+          <option value="7">G</option>
+          <option value="8">G#</option>
+          <option value="9">A</option>
+          <option value="10">A#</option>
+          <option value="11">B</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label for="initial-mode">Initial Mode</label>
+        <select id="initial-mode">
+          <option value="major">Major</option>
+          <option value="minor">Minor</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label for="section-count">Sections</label>
+        <input type="number" id="section-count" value="5" min="3" max="30">
+      </div>
+      <div class="control-group">
+        <label for="form-type">Form Type</label>
+        <select id="form-type">
+          <option value="sonata">Sonata</option>
+          <option value="fugue">Fugue</option>
+          <option value="dialogue">Dialogue</option>
+          <option value="free">Free</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="main-controls">
+      <button class="btn btn-success btn-large" id="playback-toggle-btn" aria-pressed="false">Start</button>
+      <button class="btn btn-secondary btn-large" id="regenerate-btn">Regenerate</button>
+    </div>
+
+    <div class="status-bar">
+      <div class="status-indicator">
+        <div class="status-dot stopped" id="status-dot"></div>
+        <span id="status-text">Stopped</span>
+      </div>
+      <div id="current-section-display">-</div>
+      <div id="current-bar-display">-</div>
+      <div id="time-display">0:00</div>
+    </div>
+
+    <div class="panel" id="voices-panel">
+      <div class="panel-header">
+        <h2>Voices <span class="toggle-icon">&#9660;</span></h2>
+      </div>
+      <div class="panel-content" id="voices-container"></div>
+    </div>
+
+    <div class="panel" id="leitmotiv-panel">
+      <div class="panel-header">
+        <h2>Motive <span class="toggle-icon">&#9660;</span></h2>
+      </div>
+      <div class="panel-content" id="leitmotiv-container"></div>
+    </div>
+
+    <div class="panel" id="form-panel">
+      <div class="panel-header">
+        <h2>Form <span class="toggle-icon">&#9660;</span></h2>
+      </div>
+      <div class="panel-content">
+        <div class="control-group">
+          <label>Generated Form</label>
+          <div class="form-visualizer" id="form-visualizer"></div>
+        </div>
+        <div class="control-group">
+          <label>Section Summary</label>
+          <div id="form-summary" class="control-row"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script type="module" src="js/app.js?v=13"></script>
+</body>
+
+</html>
